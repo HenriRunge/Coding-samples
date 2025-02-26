@@ -1,0 +1,192 @@
+---
+title: "Poverty rate in the US by county"
+author: "Henri Runge"
+date: "2024-11-20"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r setup, message=FALSE, warning=FALSE}
+
+# Load packages and set up working directory
+library(sf)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(stringr)
+
+rm(list = ls())
+
+zip_url <- "https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/co99_d00_shp-3.zip"
+download.file(zip_url, "co99_d00_shp.zip", mode = "wb")
+```
+
+## Load and clean county GIS
+
+```{r , message=FALSE, warning=FALSE}
+
+# Load and clean county GIS ----------------------------------------------------
+
+# Unzip and load the shapefile 
+unzip("co99_d00_shp.zip", exdir = "co99_d00_shp")
+county_sf <- st_read("co99_d00_shp/co99_d00.shp")
+
+# rename lower case variables
+colnames(county_sf) <- tolower(colnames(county_sf))
+
+# keep only counties and not boroughs, etc
+county_sf <- county_sf[county_sf$lsad_trans %in% c("County","Parish"),]
+
+# rename variables and format them
+county_sf <- county_sf[, c("state","county","geometry")]
+county_sf$state <- as.integer(county_sf$state)
+county_sf$county <- as.integer(county_sf$county)
+
+# Check the CRS 
+st_crs(county_sf)
+
+# Assign a long-lat CRS 
+st_crs(county_sf) <- 4326
+
+head(county_sf, 10)
+
+
+# Visual check
+ggplot()+
+    geom_sf(data = county_sf)
+
+# Remove everything outside the "typical" US map (lower 50 states)
+
+# 2 ways of doing it: removing hawaii, puerto rico etc directly or fix a bounding box for the continental US
+
+# Define the bbox coordinates for the contiguous US (I asked CHATGPT explicitly "What's the bbox of US 50 lower states? Give it as an sf object")
+us_bbox <- st_bbox(c(xmin = -125.0, ymin = 24.396308, xmax = -66.93457, ymax = 49.384358), crs = st_crs(4326))
+us_bbox <- st_as_sfc(us_bbox)  # Convert bbox to an sfc object
+
+# Remove oservations of counties that are outside this box
+county_sf <- st_crop(county_sf, us_bbox) # st_crop() will retain only the features in county_sf that intersect with us_bbox.
+
+state_sf <- county_sf %>%
+  group_by(state) %>%
+  summarise(geometry = st_union(geometry)) %>%
+  ungroup()
+
+
+# Plot the map
+ggplot()+
+    geom_sf(data = state_sf)
+
+```
+
+## Prepare poverty rate data
+
+```{r , message=FALSE, warning=FALSE}
+
+poverty_data <- read.csv(file = "ACSST5Y2022.S1701-Data.csv")
+colnames(poverty_data) <- tolower(colnames(poverty_data))
+poverty_data <- poverty_data[, c("geo_id","name","s1701_c03_001e")]
+colnames(poverty_data) <- c("fips_code","county_state","poverty_rate")
+# Exclude first row as it contains no information but another column title
+poverty_data <- poverty_data[-1, ]
+print(head(poverty_data))  # Before
+poverty_data <- poverty_data %>% drop_na(poverty_rate)
+print(head(poverty_data))  # After
+# Exclude first row as it contains no information but another column title
+poverty_data <- poverty_data[-1, ]
+
+
+
+
+poverty_data <- poverty_data %>%
+  mutate(
+    state = str_sub(fips_code, 10, 11),   # Extract characters 10-11 for state
+    county = str_sub(fips_code, 12, 14)  # Extract characters 12-14 for county
+  )
+# Convert to integers for compatibility
+poverty_data <- poverty_data %>%
+  mutate(
+    state = as.integer(state),
+    county = as.integer(county)
+  )
+poverty_data$poverty_rate <- as.numeric(poverty_data$poverty_rate)
+
+head(poverty_data, 10)
+```
+
+## Merge county GIS data and population data
+
+```{r , message=FALSE, warning=FALSE}
+
+# first make sure our variable types coincide
+str(county_sf)
+str(poverty_data)
+
+county_sf <- merge(county_sf, # x dataset
+                   poverty_data,  # y dataset
+                   by = c("state","county"), # identifiers in our datasets that we want to use to match (must be same type e.g. numeric, string etc)
+                   all.x = TRUE) # keep all observations from x dataset (even those that didn't match with any observation from y dataset)
+
+county_sf$poverty_rate <- as.numeric(county_sf$poverty_rate)
+head(county_sf)
+
+
+```
+
+## Plot: first crude attempt 
+
+This map is unclear due to continuous nature of population variable
+
+```{r , message=FALSE, warning=FALSE}
+
+# Crude first map attempt
+ggplot() +
+    geom_sf(data = county_sf, aes(fill = poverty_rate), color = NA) +
+    scale_fill_viridis_c(option = "plasma", name = "Poverty Rate") +
+    geom_sf(data = state_sf, fill = NA, color = 'white', size = 1) +
+    theme_void() +
+    labs(
+        title = "US Poverty Rate by County (2000)",
+        subtitle = "Data sourced from NHGIS"
+    )
+
+```
+
+
+## Plot: clean map
+
+Solution: Create bins of poverty rate instead of plotting the continuous variable
+
+```{r , message=FALSE, warning=FALSE}
+
+county_sf <- county_sf %>% filter(!is.na(poverty_rate))
+
+# Define 6 bins using quantiles and create bin limits for labels
+bin_limits <- quantile(county_sf$poverty_rate, probs = seq(0, 1, length.out = 7), na.rm = TRUE)
+bin_labels <- paste0(round(bin_limits[-7]), "-", round(bin_limits[-1]))
+
+print(bin_limits)
+print(bin_labels)
+
+# Use cut to create a factor variable with the specified labels
+county_sf$poverty_rate_bins <- cut(
+    county_sf$poverty_rate,
+    breaks = bin_limits,  # Use custom quantile-based bin limits
+    labels = bin_labels,  # Apply bin labels directly
+    include.lowest = TRUE  # Include the lowest value in the first bin
+)
+
+ggplot() +
+    geom_sf(data = county_sf, aes(fill = poverty_rate_bins), color = NA) +
+    scale_fill_viridis_d(option = "viridis", name = "Poverty Rate in %") +
+    scale_fill_brewer(palette = "YlOrRd", name = "Poverty Rate in %") +
+    geom_sf(data = state_sf, fill = NA, color = 'black', size = 1) +
+    theme_void() +
+    labs(
+        title = "US Poverty Rate by County (2022)",
+        subtitle = "Data sourced from US Census Bureau"
+    )
+
+
+```
