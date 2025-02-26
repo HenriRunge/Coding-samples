@@ -1,0 +1,371 @@
+---
+title: "ECON 121 FA24 Final Exam"
+author: "Henri Runge"
+output: pdf_document ## or html_document
+---
+
+```{r setup, include=FALSE}
+# set the code chunk format
+knitr::opts_chunk$set(echo = TRUE)
+# clear the environment
+rm(list=ls())
+# load all packages from the course
+library(tidyverse)
+library(fixest)
+library(marginaleffects)
+library(dplyr)
+load(url("https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/project_star.rds"))
+load(url("https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/maimonides.rds"))
+# you do not need any other packages for the exam.
+# if you load other packages, we cannot help you 
+# troubleshoot any resulting knitting problems.
+```
+
+## In-person codeword (disregard if taking the exam remotely)
+metrics
+
+
+## Question 1
+
+```{r}
+# Your code here
+
+# Standardizing test scores
+project_star <- 
+  project_star %>%
+  mutate(std_stest = scale(stest))
+
+feols(std_stest ~ smale + swhite + sfree, data = project_star, vcov =~schoolid)
+```
+
+\newpage
+
+## Question 2
+
+The coefficients on the student's gender and whether they are eligible
+for free lunch are statistically significant at the 5% level, whereas the one on the
+students race only is at the 9% level, implying that it is not statistically 
+significant at conventional levels. From the coefficients it follows, that
+being male decreases a students standardized test score by a fifth of a standard 
+deviation, being white increases it by 13.6% of a standard deviation and being 
+eligible for free lunch decreases it by nearly half a standard deviation.
+
+\newpage
+
+## Question 3
+
+```{r}
+# Your code here
+
+# Create a dummy for being below grade level
+project_star <- project_star %>% mutate(
+                          below_gl = ifelse(stest < "400", 1, 0))
+
+# Running the logit regression
+ logit_model <- feglm(below_gl ~ smale + swhite + sfree, data = project_star, vcov =~schoolid, 
+        family = 'logit')
+  
+# Computing marginal effects
+  avg_slopes(logit_model) 
+
+# Computing odds ratios
+  oddsratio <- exp(coef(logit_model))
+  print(oddsratio)
+```
+
+\newpage
+
+## Question 4
+
+The largest risk factor for being below grade level is being eligibile for 
+free lunch. This follows from the fact that it has the largest positive marginal
+effect and the largest odds ratio above 1. The odds ratio tells us that being 
+eligible for lunch increases the odds for being below grade level by 193%. The marginal
+effect coefficient tells us that being eligible for lunch increases
+the probability of being below grade level by 6.77 percentage points.
+
+\newpage
+
+## Question 5
+
+```{r}
+# Your code here
+
+# Create dummy for small class 
+project_star <- project_star %>% mutate(small_class = ifelse(cltype == "1", 1, 0))
+
+feols(std_stest ~ small_class | schoolid, data = project_star, vcov =~classid)
+
+# I was not sure if we should use cltype here or already create the dummy. Since
+# we care about class size and not the TA, i decided to go with the dummy. Also 
+# in question 10 it asks about the small class effect in question 5, which
+# points toward the fact that we should use the dummy here already. I hope that makes
+# sense and is correct.
+```
+
+\newpage
+
+## Question 6
+
+Being in the small class increases the standardized test score
+by approximately one fifth of a standard deviation. The gap between free lunch
+and non-free lunch students in question 1 was approximately half a standard deviation.
+This implies that the gap here is approximately 40% of that at question 1.
+(0.190294/0.476254 = 0.3995641) As we include school fixed effects and class type 
+assignment at school level was random for both students and teachers, these effects 
+can reasonably be seen as causal. 
+
+
+
+
+\newpage
+
+## Question 7
+
+```{r}
+# Your code here
+
+# Create dummy for no experience
+project_star <- project_star %>% mutate(tnoexper = ifelse(texp == "0", 1, 0))
+
+# generate the interaction term
+project_star <- project_star %>% mutate( tnoexperXsmall_class = tnoexper*small_class)
+
+# Testing for heterogeneous effects across teachers with and without experience
+model_1<-feols(std_stest ~ small_class + tnoexper + tnoexperXsmall_class | schoolid, data = project_star, vcov =~classid)
+print(model_1)
+
+hypotheses(model_1, "(small_class + tnoexperXsmall_class) / small_class = 1")
+```
+
+\newpage
+
+## Question 8
+
+Based on the p-value, which is larger than 0.05, we cannot 
+reject the null hypothesis that small class has the same effect for teachers with and without 
+experience at conventional levels. Based on our estimate, the effect of having 
+a small class is 3.3 times larger for teachers without experience than those 
+with experience. The regression results tell us that having a small class 
+increases standardized test scores by 17% of a standard deviation for teachers
+with experience and by approximately 73% of a standard deviation for teachers
+without any experience. Moreover, having a teacher without experience decreases
+standardized test scores by 12% of a standard deviation.
+
+\newpage
+
+## Question 9
+
+```{r}
+# Your code here
+feols(std_stest ~ csize | schoolid, data = project_star, vcov =~classid)
+```
+\newpage
+
+## Question 10
+
+The results tell us that increasing class size by one student decreases
+the standardized test score by 1.9% of a standard deviation. The most important
+assumption to convert the "small class" effect in question 5 to a per student 
+effect is that the marginal effect of increasing class size is linear
+and constant, such that increasing class size by one student has the same effect 
+for classes with 15 students and classes with 25 students.
+
+\newpage
+
+## Question 11
+
+```{r}
+# Your code here
+
+feols(avg_verb ~ disadv, data = maimonides, vcov=~school_id)
+```
+
+\newpage
+
+## Question 12
+
+The slope coefficient tells us that increasing the share of students who 
+are disadvantaged by one percentage points decreases the average verbal score
+by 0.33 points. The coefficient would stay approximately the same, while the standard
+error shrinks, if the individual-level model is homoskedastic in the errors
+and beta is not heterogeneous across individuals.
+
+\newpage
+
+## Question 13
+
+```{r}
+# Your code here
+
+# Create running variable
+maimonides <- maimonides %>% mutate(running_x = grade_size-41)
+
+# Restrict to observations within 25 students of the cutoff
+maimonides_restriced <- maimonides %>%
+  filter(running_x>= -25 & running_x <= 25)
+
+# Discretize x into 5-student bins
+maimonides_restriced <- maimonides_restriced %>%
+  mutate(bin = floor(running_x / 5) * 5)
+
+# Calculate bin-specific means for class_size and avg_verb
+maimonides_mean <- maimonides_restriced %>%
+  group_by(bin) %>%
+  summarise(
+    mean_class_size = mean(class_size, na.rm = TRUE),
+    mean_avg_verb = mean(avg_verb, na.rm = TRUE)
+  )
+
+# Scatterplot for class_size
+ggplot(maimonides_mean, aes(x = bin, y = mean_class_size)) +
+  geom_point(color = "blue", size = 3) +
+  labs(
+    title = "Binned Scatterplot of Class Size",
+    x = "Distance from Cutoff (x)",
+    y = "Mean Class Size"
+  ) +
+  theme_minimal()
+
+# Scatterplot for avg_verb
+ggplot(maimonides_mean, aes(x = bin, y = mean_avg_verb)) +
+  geom_point(color = "red", size = 3) +
+  labs(
+    title = "Binned Scatterplot of Average Verbal Test Scores",
+    x = "Distance from Cutoff (x)",
+    y = "Mean Average Verbal Score"
+  ) +
+  theme_minimal()
+
+```
+
+\newpage
+
+## Question 14
+
+As clearly shows in the binned scatterplot with class_size as the outcome, Maimonides'
+rule does indeed influence class_size. At the cutoff at 40, there is a clear
+discontinuity. In the language of instrumental variables, this relationship is
+called the first stage relationship. The evidence is less clear when looking 
+at the scatterplot with average test scores as the outcome. Being at the cutoff 
+clearly does increase test scores compared to being slightly below, but the
+test scores fall drastically when being shortly above the cutoff, which makes
+the evidence less convincing, since class size shortly above the cutoff should still 
+be smaller than slightly below. In the language of instrumental variables, this 
+relationship is called the reduced form relationship. 
+\newpage
+
+## Question 15
+
+```{r}
+# Your code here
+
+# first generate dummy for being above cutoff, plus
+# interaction of dummy with distance
+maimonides_restriced <- 
+  maimonides_restriced %>%
+  mutate(above = if_else(running_x>=0,1,0),
+         aboveXrunning_x = above*running_x)
+
+# first stage local linear regression with rectangular kernel and bw = 25 (doesnt
+# need to be specified because I still use the restricted dataset)
+feols(class_size ~ above + running_x + aboveXrunning_x, 
+      data = maimonides_restriced, 
+      vcov = ~~school_id)
+
+# reduced form local linear regression with rectangular kernel and bw = 25
+feols(avg_verb ~ above + running_x + aboveXrunning_x, 
+      data = maimonides_restriced, 
+      vcov = ~~school_id)
+
+```
+
+\newpage
+
+## Question 16
+
+The first stage result shows that being above the cutoff reduces average class_size
+by 15 students. The reduced form results show that being above the cutoff increases
+average verbal test scores by 2.3 points. To interpret these effects as causal 
+effects of Maimonides' rule, we need to assume that the instrument of being above
+the cutoff is independently assigned, that it is relevant and that the 
+exclusion restriction holds. Random assignment can be tested by including pre-determined 
+variables in the reduced form regression and checking if the coefficient changes, 
+it should not. Relevance can be tested by looking at the statistical significance of the 
+first stage regression. The exclusion restriction cannot be tested, but has to be thought about 
+whether it is likely that they hold. In our case, it is reasonable to assume 
+that Maimonides's rule only affects test scores through reducing class size and thus
+we should be able to conclude that the exclusion restriction holds.
+If we think that causal effects are heterogenous, which they are likely to be, 
+since there are always-takers (e.g. school 51026), i.e. schools who reduced class 
+size despite not having passed the cutoff, we also have to check the monotonicity 
+assumption. Again this can only be thought about: It seems reasonable to assume 
+that there are no defiers, i.e. schools who would decrease class size if they are 
+below the cutoff but not decrease it if they are above.
+
+
+\newpage
+
+## Question 17
+
+```{r}
+# Your code here
+# first stage local linear regression with rectangular kernel and bw = 25
+feols(class_size ~ above + running_x + aboveXrunning_x, 
+      data = maimonides_restriced, 
+      vcov = ~~school_id)
+
+# reduced form local linear regression with rectangular kernel and bw = 25, controlling
+# for predetermined variables
+feols(avg_verb ~ above + running_x + aboveXrunning_x + disadv, 
+      data = maimonides_restriced, 
+      vcov = ~~school_id)
+
+```
+
+\newpage
+
+## Question 18
+
+2.294985/-15.053213
+= -0.1524581
+
+This result represents the average causal effect among grades that
+were induced to reduce their class size due to Maimonides' rule, i.e. compliers. 
+Since we already made the monotonicity assumption in Question 16, no further
+assumptions are needed for this interpretation. It does not reflect the effects of
+passing the cutoff among those schools that reduced class size anyway (always takers),
+nor the effects of passing the cutoff among schools that never
+would reduce their class size(never takers).
+
+\newpage
+
+## Question 19
+
+```{r}
+# Your code here
+feols(avg_verb ~ running_x + aboveXrunning_x | class_size ~ above, 
+      data = maimonides_restriced, 
+      vcov = ~school_id)
+feols(avg_verb ~ class_size, data = maimonides, vcov = ~school_id)
+```
+
+\newpage
+
+## Question 20
+
+As follows from the regression results and the t-statistic of -1.57, the TSLS 
+result is not significantly different from zero. Compared to the OLS
+regression, the coefficient changes sign from positive to negative and increases
+approximately 5 times in magnitude. The difference could be due to endogeneity bias
+in class size for the OLS regression: Schools in poorer neighborhoods, for example, 
+might have larger class sizes and lower outcomes due to resource constraints, 
+creating a positive bias in OLS. The TSLS uses an exogenous instrument
+(Maimonides' rule) to remove this endogeneity bias and thus the
+coefficient changes.
+
+
+
+
+
+

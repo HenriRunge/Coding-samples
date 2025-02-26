@@ -1,0 +1,431 @@
+---
+title: "ECON 121 FA23 Problem Set 3"
+author: "Henri Runge"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # sets the code chunk format
+rm(list = ls()) # clears the environment
+```
+
+## Question 1
+
+Verbal: list group members.
+
+Timo van Heek
+
+
+Dánjal Augustinussen
+
+\newpage
+
+## Question 2
+
+Code: Load packages and dataset,generate variables, summarize data.
+
+Verbal: Interpret the summary statistics.
+
+```{r message=FALSE, warning=FALSE}
+# The PDF will show the code you write here but not the output.
+# Load packages and dataset, generate variables here.
+
+load (url("https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/nhis2010.rds"))
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(fixest)
+library(marginaleffects)
+options(scipen=999)
+nhis2010 <- nhis2010 %>% 
+mutate(low_health = ifelse(health %in% c("Fair", "Poor"), 1, 0))
+
+```
+
+```{r echo=TRUE}
+# The PDF will show the code AND output here.
+# Summarize the data here.
+summary(nhis2010)
+
+# The results show that 16.14% of the population reported having fair or poor
+# health in the sample, implying that most individuals reported having good, very
+# good or excellent health, the average age was 50.79 years with individuals 
+# from ages 25 to 85 being included in the sample, 43.81% of the sample were male,
+# and 57.64% were white, 16.11% black, 18.24% hispanic, 6.249% asian and 1.757% from
+# another ethnicity. The majority of the sample was married with the next largest
+# group being those that have never been married and the average education was 13.81
+# years with a maximum of 19 years and a low of 1 year. Moreover, most people
+# in the sample were employed with the second largest group being not in the labor 
+# force, the family income is similar across bins except the largest bin being 
+# the lowest one with incomes up to $34,999. The average BMi was 26.69, 12.89% of
+# the sample had died by 2019, 17.44% were uninsured, the average hours of sleep 
+# reported were 7.158, most people reported never having felt sad in the past 30 days,
+# 9.488% had cancer before, 3.798% had a heart attack before, 35.71% had hypertension
+# before, 12.72% have had diabetes, the mean days with 5 or more drinks in the
+# past year were 11, 42.02% had smoked over 100 cigarettes in their life and the
+# average amount of 10+ minutes vigorous activity per week was 1.494.
+```
+
+\newpage
+
+## Question 3
+
+Code: Draw graph with two line plots.
+
+Verbal: Interpret.
+
+```{r echo=TRUE}
+# All question 3 code here.
+# Subset the data for people with poor/ fair health (low_health == 1) and good 
+# health (low_health == 0)
+data_low_health <- nhis2010 %>% filter(low_health == 1)
+data_high_health <- nhis2010 %>% filter(low_health == 0)
+
+# Calculate mortality rate by age for fair-to-poor health group
+mortality_by_age_low_health <- data_low_health %>%
+  group_by(age) %>%
+  summarize(mortality_rate = mean(mort, na.rm = TRUE))
+
+# Calculate mortality rate by age for good-to-excellent health group
+mortality_by_age_high_health <- data_high_health %>%
+  group_by(age) %>%
+  summarize(mortality_rate = mean(mort, na.rm = TRUE))
+
+# Plot mortality rates by age for the two groups
+ggplot() +
+  geom_line(data = mortality_by_age_low_health, aes(x = age, y = mortality_rate, color = "Low Health")) +
+  geom_line(data = mortality_by_age_high_health, aes(x = age, y = mortality_rate, color = "High Health")) +
+  labs(title = "Mortality Rate by Age for Different Health Status Groups",
+       x = "Age", y = "Mortality Rate",
+       color = "Health Status") +
+  theme_minimal()
+```
+
+The risk of death increases with age as one would expect. From age 40 onward the
+low-health line lies consistently above the high-health line implying greater
+risk of death for those who self-reported having low health. Before age 40 there
+are some years in which the high health line is above the low health line but 
+generally the same picture obtains. The "outlier" or inconsistent years probably
+occur because you usually do not die because of natural health related reasons in 
+such young years, which is why other reasons for death become more important and 
+a car accident for instance can hit either low or high health people.
+\newpage
+
+## Question 4
+
+Code: Draw bar graphs.
+
+Verbal: Interpret your results.
+
+```{r echo=TRUE}
+# All question 4 code here
+
+# Calculate mortality rate by family income level
+mort_by_incfam <- nhis2010 %>%
+  drop_na(incfam, mort) %>%
+  group_by(incfam) %>%
+  summarize(mortality_rate = mean(mort, na.rm = TRUE))
+
+# Calculate fair/poor health rate by family income level
+low_health_by_incfam <- nhis2010 %>%
+   drop_na(incfam, health) %>%
+  group_by(incfam) %>%
+  summarize(fair_poor_health_rate = mean(low_health, na.rm = TRUE))
+
+# Plot mortality by family income level
+ggplot(mort_by_incfam, aes(x = incfam, y = mortality_rate)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mortality Rate by Family Income Level",
+       x = "Family Income Level",
+       y = "Mortality Rate") +
+  theme_minimal()
+
+# Plot fair/poor health by family income level
+ggplot(low_health_by_incfam, aes(x = incfam, y = fair_poor_health_rate)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Fair/Poor Health Rate by Family Income Level",
+       x = "Family Income Level",
+       y = "Fair/Poor Health Rate") +
+  theme_minimal()
+
+# b) Create education categories 
+nhis2010 <- nhis2010 %>%
+  mutate(education_level = case_when(
+    edyrs < 12 ~ "1. less than high school",
+    edyrs == 12 ~ "2. high school",
+    edyrs >= 13 & edyrs <= 15 ~ "3. some college",
+    edyrs == 16 ~ "4. college degree",
+    edyrs > 16 ~ "5. post-graduate"
+  ))
+
+# Mortality by education level
+mortality_education <- nhis2010 %>%
+  drop_na(education_level, mort) %>%
+  group_by(education_level) %>%
+  summarize(mortality_rate = mean(mort, na.rm = TRUE))
+
+# (d) Fair/poor health by education level
+health_education <- nhis2010 %>%
+  drop_na(education_level, health) %>%
+  group_by(education_level) %>%
+  summarize(low_health_rate = mean(low_health, na.rm = TRUE))
+
+# Plot mortality by education level
+ggplot(mortality_education, aes(x = education_level, y = mortality_rate)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mortality Rate by Education Level", x = "Education Level", y = "Mortality Rate") +
+  theme_minimal()
+
+# Plot low health by education level
+ggplot(health_education, aes(x = education_level, y = low_health_rate)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Fair/Poor Health Rate by Education Level", x = "Education Level", y = "Fair/Poor Health Rate") +
+  theme_minimal()
+
+```
+The first graph showing the mortality rate by family income level
+shows that the higher the family income, the lower the mortality rate. 
+The highest mortality rate is reported for those with a family income of
+between $0 and $34,999 with approximately 18.75%. Thereafter, the mortality
+rate gradually declines down to its low at about 5% for those with a family
+income of $100,000 and over.
+The second graph shows the fair/poor health rate by family income level 
+and gives a similar picture to the first graph with the fair/poor health rate
+being higher for those with low family income level. The highest fair/poor 
+health rate is reported for those with a family income of between $0 and $34,999 
+with approximately 27%. Thereafter, the mortality rate gradually declines down 
+to its low at about 4% for those with a family income of $100,000 and over.
+The third graph shows the mortality rate by education level and again draws 
+a picture where higher education generally is associated with a lower mortality
+rate.The maximum mortality rate is obtained for individuals with years of 
+schooling corresponding to less than a high school degree at approximately 21%, 
+whereas the low obtains for those with years of schooling corresponding to a
+college degree at slightly below 7.5%. Interestingly, the mortality rate slightly
+increases fo individuals with a post-graduate level of schooling to slightly above 
+7.5%.
+The fourth graph displaying the fair/poor health rate by education level shows that
+the incidence of self-reported fair/poor health decreases with education level.
+The high is obtained at approximately 33% for individuals with years of education
+corresponding with less than a high school diploma. Thereafter, the fair/poor
+health rate steeply decreases to its low for individuals with post-graduate 
+education at about 5%.
+
+\newpage
+
+## Question 5
+
+Code: Estimate regressions.
+
+Verbal: Interpret and compare.
+
+```{r echo=TRUE}
+# All question 5 code here
+
+# Create age string variable
+nhis2010 <- nhis2010 %>%
+  mutate(agegroup = case_when((25<= age & age <= 29) ~ "25-29",
+                             (30<= age & age <= 34) ~ "30-34",
+                             (35<= age & age <= 39) ~ "35-39",
+                             (40<= age & age <= 44) ~ "40-44",
+                             (45<= age & age <= 49) ~ "45-49",
+                             (50<= age & age <= 54) ~ "50-54",
+                             (55<= age & age <= 59) ~ "55-59",
+                             (60<= age & age <= 64) ~ "60-64",
+                             (65<= age & age <= 69) ~ "65-69",
+                             (70<= age & age <= 74) ~ "70-74",
+                             (75<= age & age <= 79) ~ "75-79",
+                             (80<= age & age <= 85) ~ "80-85"))
+                             
+# Linear Probability Model  
+lpm_mortality <- feols(mort ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero')
+
+lpm_health <- feols(low_health ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero')
+
+# Probit Model 
+probit_mortality <- feglm(mort ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero', family = 'probit')
+
+probit_health <- feglm(low_health ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero', family = 'probit')
+
+# Logit Model 
+logit_mortality <- feglm(mort ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero', family = 'logit')
+
+logit_health <- feglm(low_health ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero', family = 'logit')
+
+# Summary of the regression results
+summary(lpm_mortality)
+summary(lpm_health)
+summary(probit_mortality)
+summary(probit_health)
+summary(logit_mortality)
+summary(logit_health)
+
+# Marginal effects
+avg_slopes(probit_mortality)
+avg_slopes(probit_health)
+avg_slopes(logit_mortality)
+avg_slopes(logit_health)
+           
+# Odds ratio
+mortality_odds_ratios <- exp(coef(logit_mortality))
+health_odds_ratios <- exp(coef(logit_health))
+print(mortality_odds_ratios)
+print(health_odds_ratios)
+
+# Create a table to be able to compare LPM, probit and logit results
+coef_lpm_mort <- coef(lpm_mortality)
+coef_probit_mort <- coef(probit_mortality)
+coef_logit_mort <- coef(logit_mortality)
+cbind(coef_lpm_mort, coef_probit_mort, coef_logit_mort)
+
+
+coef_lpm_health <- coef(lpm_health)
+coef_probit_health <- coef(probit_health)
+coef_logit_health <- coef(lpm_health)
+cbind(coef_lpm_health, coef_probit_health, coef_logit_health)
+```
+
+I chose to include the variables age and education both in the form of string variables 
+because both age (I chose 5 years as the bin width to allow for enough detail)
+and education are likely to not have linear effects on mortality 
+and health. For age, the graph drawn for question 3, suggests a quadratic relationship, 
+but because we only have individuals age 25-85 the interpretation of the coefficients
+would be difficult. In terms of results the table comparing the coefficients
+of the LPM, the probit and the logit model shows that the coefficients for the 
+mortality and health regression differ in terms of magnitude between the models, 
+but mostly have the same sign; another observation is that for many coefficients 
+the one of the logit model is greater in terms of magnitude than the one of the 
+probit model and the one of the probit model larger than the one of the linear 
+probability model. In terms of marginal effects the ones of the logit 
+model are approximately twice the size of those of the probit model. Lastly, 
+we have the odds ratios which for instance show that, compared to 25-29 year olds, 
+70-74 year olds have a 27 times higher odd of dying, etc.
+
+
+
+\newpage
+
+## Question 6
+
+Code: Use the results from the mortality logit model to compare the two groups.
+
+Verbal: Interpret your results.
+
+```{r echo=TRUE}
+# All question 6 code here
+
+
+# Create dummy variables for incfam categories
+nhis2010 <- nhis2010 %>%
+  mutate(
+    incfam_0_34k = ifelse(incfam == "$0 - $34,999", 1, 0),
+    incfam_35_49k = ifelse(incfam == "$35,000 - $49,999", 1, 0),
+    incfam_50_74k = ifelse(incfam == "$50,000 - $74,999", 1, 0),
+    incfam_75_99k = ifelse(incfam == "$75,000 - $99,999", 1, 0),
+    incfam_100k_plus = ifelse(incfam == "$100,000 and over", 1, 0)
+  )
+
+# Create dummy variables for education levels
+nhis2010 <- nhis2010 %>%
+  mutate(
+    less_than_high_school = ifelse(edyrs < 12, 1, 0),
+    high_school = ifelse(edyrs == 12, 1, 0),
+    some_college = ifelse(edyrs >= 13 & edyrs <= 15, 1, 0),
+    college_degree = ifelse(edyrs == 16, 1, 0),
+    post_graduate = ifelse(edyrs > 16, 1, 0)
+  )
+
+# Fit the Logit model with dummy variables for income and education
+logit_mortality_new <- feglm( mort ~ agegroup + high_school + some_college + college_degree + post_graduate +
+    incfam_35_49k + incfam_50_74k + incfam_75_99k + incfam_100k_plus + black + hisp 
+                       + asian + other, data = nhis2010, vcov = 'hetero', family = 'logit')
+
+
+# Extract coefficients from the logit model
+coeffs <- coef(logit_mortality_new)
+
+# Calculate the log-odds for Group A (Asian, less than high school, income <$35,000)
+log_odds_A <- coeffs["(Intercept)"] + 
+              coeffs["asian"] 
+            
+
+# Convert log-odds to probability for Group A
+prob_A <- exp(log_odds_A) / (1 + exp(log_odds_A))
+
+# Calculate the log-odds for Group B (Black, college degree, income >$100,000)
+log_odds_B <- coeffs["(Intercept)"] + 
+              coeffs["black"] + 
+              coeffs["college_degree"] + 
+              coeffs["incfam_100k_plus"] 
+              
+# Convert log-odds to probability for Group B
+prob_B <- exp(log_odds_B) / (1 + exp(log_odds_B))
+
+
+hypotheses(logit_mortality_new, "(asian)-(black+college_degree+incfam_100k_plus)=0")
+```
+The results show that at the same age Asian adults with less than 12 years of 
+education and family incomes less than $35k have a greater mortality risk than
+Black adults with 16 years of education and family incomes over $100k. This difference
+is statistically significant. And no, this model is not the best for testing 
+the differences between these groups. We should include interaction terms between the 
+ethnicity variables and income as well as education levels to see if the effect
+of education levels changes with ethnicity and the same for income.
+
+
+\newpage
+
+## Question 7
+
+Verbal: Assess causality.
+The coefficients on family income should not be thought of as causal, because 
+observational data like the data from the National Health Interview Survey might
+be subject to confounding factors and/ or endogeneity issues. Despite controlling
+for some other socioeconomic variables in our regression, the coefficients on 
+family income might capture the effect of other variables influencing both
+family income and health, such as ability, possibly leading to higher income
+and better health because of better life choices or family background, where 
+children of doctors might have better health and better family income later in their 
+lives. Moreover, health issues could impact one's ability to work and thus diminish
+family earnings, creating reverse causaliy. To establish causality, we would need 
+to use methods designed to infer causality, such as diff-in-diff approaches based
+on natural experiments.
+\newpage
+
+## Question 8
+
+Code: Assess how much health behavior can explain the mortality logit results.
+
+Verbal: Interpret your results.
+
+```{r echo=TRUE}
+# All question 8 code here
+
+# Extended Logit Model with health insurance, and health behaviors
+logit_extended <- feglm(mort ~ agegroup + education_level + incfam + black + hisp 
+                       + asian + other + uninsured + alc5upyr + smokev + vig10fwk + hrsleep , 
+                       data = nhis2010, vcov = 'hetero', family = 'logit')
+
+# Calculate Odds Ratio for extended model
+extended_odds_ratios <- exp(coef(logit_extended))
+
+# Display odds ratio
+print(extended_odds_ratios)
+print(mortality_odds_ratios)
+```
+The education level odds ratios all move closer to 1 in the extended model, implying
+that the mediating variables - whether one is uninsured, the days one had more than 5 drinks,
+whether one ever smoked more than 100 cigarettes, the frequency of vigorous 
+activity per week and the usual hours of sleep per night - explain quite a lot
+of the relationship between education and mortality. This is because an odds ratio
+close to 1 implies that the coefficient on a particular variables is 0, implying that
+it has no relation to the independent variable and thus only captured the effect
+of the mediating variables in the short regression.For the family income level, 
+however, three of four levels actually move further from 1. This implies that here 
+the mediating variables cannot explain the relationship between family income
+and mortality.

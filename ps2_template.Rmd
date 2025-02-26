@@ -1,0 +1,305 @@
+---
+title: "ECON 121 FA23 Problem Set 2"
+author: "Henri Runge"
+output: pdf_document # change to html_document if you don't have LaTeX
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # sets the code chunk format
+rm(list = ls()) # clears the environment
+```
+
+## Question 1
+
+Verbal: list group members.
+Timo van Heek
+\newpage
+
+## Question 2
+
+Verbal answer only, no code.
+The Mincerian Wage Equation establishes a relationship between the dependent 
+variable, the logarithm of the hourly wage, and the explanatory variables educ-
+ation and experience as well as experience squared. Given the log-level 
+relationship and assuming that experience and education are exogenous, one can 
+say that a one-year increase in education increases the hourly wage by 
+100*beta1%, holding the years of experience fixed. Experience is featured twice 
+also including a squared term, because intuitively we might expect that the 
+effect of experience is different for the first years of experience compared to 
+the years of experience in later years of one's career. Depending on the sign of 
+the squared term, it could either be that the return to experience increases 
+with years of experience (positive sign on squared term) or decreases (negative 
+sign on squared term). Labor economics typically assumes that the sign is 
+positive so that the wage of young professionals is lower and increases more
+steeply in later years; this is referred to as "deferred compensation" and 
+supposed to incentivize workers to stay in the company, work hard and not shirk.
+
+\newpage
+
+## Question 3
+
+Code: Load packages and dataset, modify sample, generate variables, summarize data.
+
+Verbal: Interpret the summary statistics.
+
+```{r message=FALSE, warning=FALSE}
+# The PDF will show the code you write here but not the output.
+# Load packages and dataset, modify sample, generate variables here.
+# Load the CPS data
+load (url("https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/cps18.rds"))
+# Drop individuals with fewer than 50 weeks worked, fewer than 35 hours/week, or 0 earnings
+fil_data <- cps18 %>%
+filter(wkswork >= 50, hrs_per_wk >= 35, incwage > 0) %>%
+  
+# Generate log hourly wage variable
+mutate(hourly_wage = incwage / (wkswork * hrs_per_wk),
+         log_hourly_wage = log(hourly_wage)) %>%  
+  
+# Create race/ethnicity dummies
+mutate(Black = ifelse(race == "black", 1, 0),
+         Native = ifelse(race == "native", 1, 0),
+         Asian = ifelse(race == "asian/pacific", 1, 0),
+         Other_Multiple = ifelse(race == "multiple/other", 1, 0)) %>%
+  
+# Create education variable (adjust categories to years of schooling)
+mutate(education_years = case_when(
+    ed_lt_hs == 1 ~ 8,            
+    ed_some_hs == 1 ~ 10,
+    ed_hs_degree == 1 ~ 12, 
+    ed_some_col == 1 ~ 14,     
+    ed_ba_degree == 1 ~ 16,          
+    ed_post_degree == 1 ~ 18,          
+    TRUE ~ NA_real_)) %>%
+  
+# Generate potential experience and squared experience
+mutate(experience = age - education_years - 5,
+         experience_sq = experience^2) 
+
+```
+
+```{r}
+# The PDF will show the code AND output here.
+# Summarize the data here.
+  
+summary(fil_data)
+
+# Something interesting to observe is that the mean of ed_some_col is the 
+# highest among the education dummy variables, implying that most people in the 
+# dataset obtained some college education. Moreover, the annual wage differs 
+# between $4 and above $1.6 million, where it seems that something most have gone 
+# wrong with the former observation.
+ fil_data %>%
+  arrange(incwage) %>%    # Sort in ascending order by incwage
+  slice(1:10)
+# It seems there are some people who worked quite a lot but did basically earn 
+# no money at all. It might be that they just did voluntary work, but to me it 
+# seems unlikely that someone would work 70 hours a week for 52 weeks (like the 
+# sixth observation in the table below) without earning any money and thus my 
+# interpretation would be that they misinterpreted the question on incwage and 
+# filled in their hourly wage. 
+```
+
+\newpage
+
+## Question 4
+
+Code: Estimate regression.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 4 code here
+# Estimate the Mincerian Wage Equation 
+mincer_fixest <- feols(log_hourly_wage ~ education_years + experience + 
+                         experience_sq, data = fil_data, vcov = 'hetero')
+
+# Display the regression output
+summary(mincer_fixest)
+
+# The estimations imply that, given years of experience, one additional year of 
+# education increases the hourly wage by approximately 13.8%. Moreover, given 
+# years of education, one additional year of experience changes the hourly wage 
+# according to this equation: 0.03-0.0004experience. Thus, the first year of 
+# experience increases the hourly wage by approximately 3% and, for instance, the 
+# 20th year increases it by (100*(0.03-0.0004*20))%=2.2%. Lastly, without any 
+# education and experience the expected wage would be $2.05, which clearly is an 
+# extrapolation and should not be interpreted as carrying any real-world meaning.
+```
+
+\newpage
+
+## Question 5
+
+Code: Estimate regression.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 5 code here
+# Estimate the extended Mincerian Wage Equation with race and sex controls 
+mincer_extended <- feols(log_hourly_wage ~ education_years + experience + 
+                           experience_sq + Black + Native + Asian + 
+                           Other_Multiple + male, 
+                           data = fil_data, vcov = 'hetero')
+
+# Display the regression output
+summary(mincer_extended)
+
+# The return to education slightly increases when controlling for race and sex. 
+# This suggests omitted variable bias, where the education variable captures
+# some of the effect of sex and ethnicity on the hourly wage. 
+```
+
+\newpage
+
+## Question 6
+
+Code: Assess statistical significance.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 6 code here
+hypotheses(mincer_extended, "Black = -male")
+
+# Given our high z-statistic and the correspondingly low p-value, we can 
+# conclude that the black-white log wage gap is statistically different from
+# the female-male log wage gap.
+```
+
+
+\newpage
+
+## Question 7
+
+Code: Estimate regressions and assess significance of differences between them.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 7 code here
+# Subset the data for men (male == 1) and women (male == 0)
+data_men <- fil_data %>% filter(male == 1)
+data_women <- fil_data %>% filter(male == 0)
+
+# Extended regression model for men
+model_men <- feols(log_hourly_wage ~ education_years + experience + experience_sq + 
+                   Black + Native + Asian + Other_Multiple, data = data_men, vcov = 'hetero')
+
+# Extended regression model for women
+model_women <- feols(log_hourly_wage ~ education_years + experience + experience_sq + 
+                     Black + Native + Asian + Other_Multiple, data = data_women, vcov = 'hetero')
+
+# From the regression results it follows that the return to education is 
+# about 1 percentage point higher for women than for men. (14.8% vs. 13.9% 
+# increase in the hourly wage for one additional year of schooling, keeping 
+# everything else constant).
+
+# Extract coefficients for education_years
+coef_men <- coef(model_men)["education_years"]
+coef_women <- coef(model_women)["education_years"]
+
+# Extract standard errors directly from the summary
+se_men <- summary(model_men)$coeftable["education_years", "Std. Error"]
+se_women <- summary(model_women)$coeftable["education_years", "Std. Error"]
+
+# Print coefficients and standard errors
+cat("Return to education for men:", coef_men, "\n")
+cat("Standard Error for men:", se_men, "\n\n")
+
+cat("Return to education for women:", coef_women, "\n")
+cat("Standard Error for women:", se_women, "\n")
+# Compute the Z-statistic for the difference
+z_stat_gender <- (coef_women - coef_men) / sqrt(se_men^2 + se_women^2)
+
+# Compute the p-value
+p_value_gender <- 2 * (1 - pnorm(abs(z_stat_gender)))
+
+# Print the Z-statistic and p-value
+cat("Z-statistic:", z_stat_gender, "\n")
+cat("P-value:", p_value_gender, "\n")
+
+# The findings suggest that the difference in return to education for
+# men and women is statistically different, as the null hypothesis that 
+# education_years is equal for men and women is rejected at a 
+# significance level of alpha = 0.05.
+```
+
+\newpage
+
+## Question 8
+
+Code: Estimate regression, use delta method.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 8 code here
+# Extended regression with interaction terms for male and education
+model_interaction <- feols(log_hourly_wage ~ education_years + experience + experience_sq + 
+                     Black + Native + Asian + Other_Multiple + male + education_years*male + experience*male + experience_sq*male + Black*male + Native*male + Asian*male + Other_Multiple*male, data = fil_data, vcov = 'hetero')
+
+# Displaying the results
+etable(model_interaction)
+
+# The results are approximately the same with the coefficient on education_years 
+# which gives the slope for women being 0.1485 and the slope for men being
+# 0.1485-0.0097=0.1388.
+
+# Estimating the ratio of returns for women to men using the delta method
+hypotheses(model_interaction, "education_years / (education_years + education_years:male) = 1")
+
+
+```
+
+\newpage
+
+## Question 9
+
+Code: Load dataset, compute unweighted and weighted means.
+
+Verbal: Interpret your results.
+
+```{r}
+# All question 9 code here
+
+```
+
+\newpage
+
+## Question 10
+
+Code: Modify sample, estimate unweighted and weighted regressions.
+
+Verbal: Assess unweighted versus weighted results.
+
+```{r}
+# All question 10 code here
+
+```
+
+\newpage
+
+## Question 11
+
+Verbal answer only, no code.
+
+\newpage
+
+## Question 12
+
+Verbal answer only, no code.
+
+\newpage
+
+## Question 13
+
+Code: Estimate regression.
+
+Verbal: Explain choice of covariates, interpret results.
+
+```{r}
+# All question 13 code here
+
+```
+

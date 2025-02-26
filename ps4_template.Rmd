@@ -1,0 +1,370 @@
+---
+title: "ECON 121 FA23 Problem Set 4"
+author: "Henri Runge"
+output: pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # sets the code chunk format
+rm(list = ls()) # clears the environment
+```
+
+## Question 1
+
+Verbal: list group members.
+
+Danjál Augustinussen
+
+
+
+Timo van Heek
+
+
+\newpage
+
+## Question 2
+
+Code: Load packages and dataset, summarize data.
+
+Verbal: Interpret the summary statistics.
+
+```{r message=FALSE, warning=FALSE}
+# The PDF will show the code you write here but not the output.
+# Load packages and dataset here.
+library(fixest)
+library(tidyverse)
+library(dplyr)
+library(marginaleffects)
+load (url("https://github.com/HenriRunge/Coding-samples/raw/refs/heads/main/nlsy_kids.rds"))
+
+```
+
+```{r}
+# The PDF will show the code AND output here.
+# Summarize the data here.
+summary(nlsy_kids)
+
+# Summarize pre-Head Start characteristics by Head Start participation
+summary_table <- nlsy_kids %>%
+  group_by(head_start) %>%
+  summarize(
+    mean_mom_edu = mean(momed, na.rm = TRUE),
+    mean_income = mean(lninc_0to3, na.rm = TRUE),
+    mean_lnbw = mean(lnbw, na.rm = TRUE),
+    prop_black = mean(black, na.rm = TRUE),
+    prop_hispanic = mean(hispanic, na.rm = TRUE),
+    prop_male = mean(male, na.rm = TRUE),
+    mean_dad_home = mean(dadhome_0to3, na.rm = TRUE),
+    mean_ppvt = mean(ppvt_3, na.rm = TRUE),
+    mean_firstborn = mean(firstborn, na.rm = TRUE),
+    
+    n = n()
+  )
+
+transposed_table <- as.data.frame(t(summary_table))
+print(transposed_table)
+
+
+# Calculating summary statistics, it shows that of the 881 children who participate in Head
+# Start have mothers with on average a quarter of a year less of education attainment.
+# Moreover, the logarithm of family income between ages 0 and 3 is lower for participants.
+# Birth weight is approximately the same for both groups. Of the participants a much
+# larger portion of close to 52% is black compared to only 27% for non-participants.
+# Conversely, the portion of non-participants being hispanic is slightly larger at 20% 
+# compared to 19%. Participants are 53% male, whereas non-participants are 50% male.
+# Dad's of non-participants were at home more of the time than those of participants.
+# Basically, for participants on average fathers were at home 50% of the time between
+# ages 0 and 3, whereas for non-participants they were home 72% of the time.
+# Second to last, the mean PPVT score was 4 points higher for non-participants.
+# Lastly, the percentage of participants being first-born children was slightly higher
+# at 42% compared to 40%.
+```
+
+\newpage
+
+## Question 3
+
+Code: Regression.
+
+Verbal: Interpret.
+
+```{r}
+# All question 3 code here.
+feols(comp_score_5to6 ~ head_start, data = nlsy_kids, vcov = ~mom_id)
+
+# Summarize the variables of interest
+summary(nlsy_kids$head_start)
+summary(nlsy_kids$comp_score_5to6)
+
+# Calculate standard deviation of test scores
+sd(nlsy_kids$comp_score_5to6, na.rm = TRUE)
+
+# If Head Start participation is considered to be exogenous, we can conclude
+# that it reduces composite test scores by 5.8 points. Given the standard deviation 
+# of test scores, this implies a reduction of approximately a quarter of a standard 
+# deviation. However, it is not reasonable to assume that Head Start participation
+# is exogenous, because it is likely that there are omitted variables at the 
+# family level, such as household income, racial ethnicity, the mother's 
+# years of education etc. Omitting these variables will most likely bias the estimated 
+# coefficient downward. I am assuming that it would turn positive when controlling for 
+# these variables, because Head Start participants are disadvanteged. Thus, right now 
+# the coefficient implies a negative effect of participation on test scores because 
+# it captures the negative effects of low income, lower education of mothers, etc. 
+# on test scores. Given that a child is disadvantaged 
+# (controlling for the mentioned variabels), the participation in Head Start will most 
+# likely show a positive effect on test scores.
+
+```
+
+\newpage
+
+## Question 4
+
+Code: Regression.
+
+Verbal: Interpret.
+
+```{r}
+# All question 4 code here
+
+# Group data by mother ID and calculate family means
+family_means <- nlsy_kids %>%
+  group_by(mom_id) %>%
+  summarize(mean_head_start = mean(head_start, na.rm = TRUE),
+    mean_test_score = mean(comp_score_5to6, na.rm = TRUE))
+# Fit an OLS regression using the family means
+feols(mean_test_score ~ mean_head_start, data = family_means, vcov = 'hetero')
+
+# The estimated coefficient is a bit less than twice as large as the one 
+# computed at question 3. Looking at "between mother" variation, the effect
+# of participation in Head Start on test scores appears to be slightly less than 
+# one half of a standard deviation. The problem with this regression it that it 
+# removes within-family variation, making the coefficient more sensitive to biases
+# related to omitted variables at the family level and therefore biasing it 
+# even further downward.
+```
+
+\newpage
+
+## Question 5
+
+Code: Regression.
+
+Verbal: Interpret.
+
+```{r}
+# All question 5 code here
+
+# Estimate the fixed-effects model
+feols(comp_score_5to6 ~ head_start | mom_id, data = nlsy_kids)
+
+# The results of the fixed-effects model imply that Head Start participation
+# increases test scores by approximately one third of a standard deviation when controlling
+# for between-family variation. The explanation to the change in sign has basically 
+# already been given at the previous questions. The omitted variables related
+# to between-family variation biased the coefficient downward. Now that they are
+# being controlled for, the coefficient reflects the actual effect of Head Start
+# participation on test scores. This is the case because before it also captured
+# the fact that Head Start participants predominantly come from disadvantaged families,
+# which (logically) seems to decrease test scores. This, however, has nothing
+# to do with the effect of Head Start on test scores, it is a confounder. Thus,
+# the estimate that results from the fixed-effects model most likely reflects
+# the effect of Head Start on test scores.
+```
+
+\newpage
+
+## Question 6
+
+Code: Regression.
+
+Verbal: Interpret.
+
+```{r}
+# All question 6 code here
+
+# Creating a subset with no missing values for the multiple variables
+q6_subset <- nlsy_kids %>%
+  drop_na(head_start, male, firstborn, lninc_0to3, dadhome_0to3, lnbw)
+
+# Running FE regression with and without pre-Head Start variables
+# Model without pre-Head Start variables
+feols(comp_score_5to6 ~ head_start | mom_id, data = q6_subset)
+
+# Model with pre-Head Start variables
+feols(comp_score_5to6 ~ head_start + male + firstborn + 
+                      lninc_0to3 + dadhome_0to3 + lnbw | mom_id, data = q6_subset)
+
+# To be able to compare the multipe with the simple regression model, I firstly
+# create a dataset without any missing values for the covariates that I want to include.
+# I chose to include the variables on whether an individual is the first born child, 
+# its household's income ages 0 to 3, whether the individual is male and the birthweight 
+# as pre-Head Start covariates. I wanted to include the early childhood test score 
+# as well as it is determined prior to Head Start participation and captures
+# within-family variation. However, including it changes the coefficient on Head 
+# Start dramatically. Checking this odd result, it shows that many individuals 
+# have na scores for the early childhood variable, apparently changing the composition
+# of the subset of the dataset being used for this regression dramatically. 
+# Thus, the dataset for this regression is not at all comparable to the one used for question 5. 
+# To be able to compare the results better, I excluded this variable.  
+# Generally, for variables to qualify as pre-Head Start covariates in a mother-fixed-effect
+# model they must have been determined pre-Head Start and they cannot reflect between-family 
+# variation. Thus, momeduc and the racial ethnicity dummies are disqualified because
+# they reflect between-family variation, which is captured by including fixed effects.
+# Moreover, the variables comp_score_7to10 to fphealth are disqualified because they
+# are only determined after Head Start participation. The variables included in my model, however, 
+# all reflect within-family variation not captured by including mother-fixed effects and 
+# were determined prior to Head Start participation. When including pre-Head Start 
+# covariates in the fixed-effects model, the estimated coefficient on the Head Start
+# variable is reduced slightly in magnitude but keeps the same sign. In the multiple regression,
+# Head Start participation appears to increase test scores by approximately one quarter of a standard
+# deviation, whereas it's slightly more than that in the simple regression. Thus, we can 
+# conclude  that the fixed effect estimate of the effect of Head Start is robust to include 
+# pre-Head Start covariates.
+```
+
+\newpage
+
+## Question 7
+
+Code: Regressions.
+
+Verbal: Interpret.
+
+```{r}
+# All question 7 code here
+
+# Standardize test scores for all age groups
+score_subset <- nlsy_kids %>%
+  mutate(
+    comp_score_5to6_std = scale(comp_score_5to6, center = TRUE, scale = TRUE),
+    comp_score_7to10_std = scale(comp_score_7to10, center = TRUE, scale = TRUE),
+    comp_score_11to14_std = scale(comp_score_11to14, center = TRUE, scale = TRUE)
+  ) %>%
+  drop_na(head_start, comp_score_5to6, comp_score_11to14, comp_score_7to10)
+  
+
+# Fixed-effects model for test scores at ages 5-6
+feols(
+  comp_score_5to6_std ~ head_start | mom_id,
+  data = score_subset
+)
+# Fixed-effects model for test scores at ages 7-10
+feols(
+  comp_score_7to10_std ~ head_start | mom_id,
+  data = score_subset
+)
+
+# Fixed-effects model for test scores at ages 11-14
+feols(
+  comp_score_11to14_std ~ head_start | mom_id,
+  data = score_subset
+)
+
+# As follows from the regression results, the effects of Head Start on test scores
+# fade out with age. In both regressions the estimated coefficient is closer
+# to zero. However, the results indicate that the effects don't monotonically decrease
+# with age as the effect for 11 to 14 year olds is larger than the one for 7 to 10
+# 10 year olds. Generally, the effect remains significantly positive in later years of 
+# childhood.
+```
+
+\newpage
+
+## Question 8
+
+Code: Regressions.
+
+Verbal: Interpret.
+
+```{r}
+# All question 8 code here
+# Fixed-effects model for repeating a grade
+feols(
+  repgrade ~ head_start | mom_id,
+  data = nlsy_kids
+)
+
+# Fixed-effects model for health outcomes
+feols(
+  fphealth ~ head_start | mom_id,
+  data = nlsy_kids
+)
+# Fixed-effects model for high school graduation
+feols(
+  hsgrad ~ head_start | mom_id,
+  data = nlsy_kids
+)
+
+# Fixed-effects model for college attendance
+feols(
+  somecoll ~ head_start | mom_id,
+  data = nlsy_kids)
+
+# Fixed-effects model for being idle
+feols(
+  idle ~ head_start | mom_id,
+  data = nlsy_kids)
+
+# Fixed-effects model for having a learning disability
+feols(
+  learndis ~ head_start | mom_id,
+  data = nlsy_kids)
+
+# The results of the mother-fixed effect model show that Head Start participation 
+# has a negative, insignificant, close-to-zero effect on whether an individual 
+# will repeat a grade in their life. Similarly, the effect on health outcomes
+# is very slightly but significantly negative, implying that participation slightly
+# decreases the likelihood of reporting fair/poor health in later years. Moreover, 
+# the effect of Head Start participation on high school graduation likelihood is small, 
+# but significantly positive. Furthermore, the effect of Head Start participation
+# on college attendance is small but significantly positive. Second to last, Head Start
+# participation has a small but significantly negative effect on the likelihood of 
+# being idle. Lastly, Head Start seems to have a small but significantly negative effect
+# on the likelihood of being diagnosed with a learning disability.
+# Generally, it seems that Head Start participation seems to improve life outcomes 
+# slightly but significantly.
+```
+
+\newpage
+
+## Question 9
+
+Code: Analysis of heterogeneity.
+
+Verbal: Interpret.
+
+```{r}
+# All question 9 code here
+# Fixed-effects model with interaction terms for race/ethnicity
+feols(
+  hsgrad ~ head_start + head_start * black + head_start * hispanic | mom_id,
+  data = nlsy_kids)
+
+# Judging from the regression results, it seems that the effect of Head Start
+# participation on the likelihood of high school graduation improves for individuals
+# that are black and hispanic compared to all other individuals. However, the results
+# are insignificant and should thus be treated with caution.
+
+```
+
+\newpage
+
+## Question 10
+
+Verbal: Policy implications.
+
+I would argue that the results support Joe Biden's proposal of expanding federal
+funding for early-childhood education programmes. Based on our fixed-effects estimates
+we find significantly and large positive effects on test scores at ages 5 to 6, which 
+stay significant but shrink in size in later years. Moreover, our estimates for later
+life outcomes suggest significant although small positive effects. I would be comfortable
+predicting the qualitative effects of such an expansion but not the quantitative
+ones based on my results, because the magnitude of the effect does change quite a lot
+when excluding individuals with na scores for the covariates in question 6, which implies
+that the size of the coefficient seems quite sensitive to the sample that it is being 
+estimated on, making me uncomfortable in predicting the quantitive effects of an expansion
+based on these results.
+
+
